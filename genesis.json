@@ -1,0 +1,26 @@
+{
+  "chain_id": "claude-demo",
+  "timestamp": 1704067200,
+  "block_time_seconds": 5,
+  "max_tx_per_block": 500,
+  "accounts": [
+    {
+      "address": "0x1bacb7fe335260a268290c8db45cb9aabbcd1138",
+      "public_key": "3716ceb863672c3f51a74928ec9a12c388cb6ed49851ec1c5579390c90e46cf8",
+      "balance": 1000000,
+      "stake": 500
+    },
+    {
+      "address": "0x9a5646c8775b53cec4642a7c34c0ba8013ea012c",
+      "public_key": "4cea2c58d5642f01d7a743c2bcd9a356fc995255b50604e01e0d513ae5261187",
+      "balance": 1000000,
+      "stake": 300
+    },
+    {
+      "address": "0xdc78f946506e25abaef0862e2e33a70d3aeac884",
+      "public_key": "2c4d3887adfb66d46195cc4a2edf2252f9737913e6c42a3269ed94642b7310a3",
+      "balance": 1000000,
+      "stake": 200
+    }
+  ]
+}

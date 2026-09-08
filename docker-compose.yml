@@ -1,0 +1,70 @@
+services:
+  node1:
+    build: .
+    container_name: node1
+    command:
+      - -genesis=/app/genesis.json
+      - -wallet=/app/wallet.json
+      - -listen=:26656
+      - -advertise=node1:26656
+      - -datadir=/app/data
+    volumes:
+      - ./genesis.json:/app/genesis.json:ro
+      - ./examples/node1/wallet.json:/app/wallet.json:ro
+      - node1-data:/app/data
+    ports:
+      - "26661:26656"
+    networks:
+      - chain
+
+  node2:
+    build: .
+    container_name: node2
+    command:
+      - -genesis=/app/genesis.json
+      - -wallet=/app/wallet.json
+      - -listen=:26656
+      - -advertise=node2:26656
+      - -peers=node1:26656
+      - -datadir=/app/data
+    volumes:
+      - ./genesis.json:/app/genesis.json:ro
+      - ./examples/node2/wallet.json:/app/wallet.json:ro
+      - node2-data:/app/data
+    ports:
+      - "26662:26656"
+    depends_on:
+      - node1
+    networks:
+      - chain
+
+  node3:
+    build: .
+    container_name: node3
+    command:
+      - -genesis=/app/genesis.json
+      - -wallet=/app/wallet.json
+      - -listen=:26656
+      - -advertise=node3:26656
+      - -peers=node1:26656,node2:26656
+      - -datadir=/app/data
+    volumes:
+      - ./genesis.json:/app/genesis.json:ro
+      - ./examples/node3/wallet.json:/app/wallet.json:ro
+      - node3-data:/app/data
+    ports:
+      - "26663:26656"
+    depends_on:
+      - node1
+      - node2
+    networks:
+      - chain
+
+networks:
+  chain:
+    driver: bridge
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
