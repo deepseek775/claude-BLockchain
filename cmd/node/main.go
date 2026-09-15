@@ -55,7 +55,11 @@ func main() {
 
 	var w *wallet.Wallet
 	if *walletPath != "" {
-		w, err = wallet.Load(*walletPath)
+		passphrase, err := wallet.ResolvePassphrase(*walletPath, "WALLET_PASSPHRASE")
+		if err != nil {
+			logger.Fatalf("resolve wallet passphrase: %v", err)
+		}
+		w, err = wallet.Load(*walletPath, passphrase)
 		if err != nil {
 			logger.Fatalf("load wallet: %v", err)
 		}
@@ -84,7 +88,7 @@ func main() {
 		}
 	}
 
-	node := p2p.New(p2p.Config{
+	node, err := p2p.New(p2p.Config{
 		ListenAddr:     *listenAddr,
 		AdvertiseAddr:  advertise,
 		BootstrapPeers: bootstrap,
@@ -93,6 +97,9 @@ func main() {
 		Wallet:         w,
 		Logger:         logger,
 	})
+	if err != nil {
+		logger.Fatalf("init p2p node: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)

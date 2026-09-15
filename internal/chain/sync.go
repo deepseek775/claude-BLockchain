@@ -8,21 +8,36 @@ import (
 
 // ReplaceChain validates candidate as a full replacement chain and, if it
 // is both valid and longer than the current chain, atomically swaps it in
-// (fork choice rule: longest valid chain). It is used when a peer reports a
-// chain ahead of ours.
+// (fork choice rule: longest valid chain, bounded by finality - see below).
+// It is used when a peer reports a chain ahead of ours.
 //
-// The genesis block must exactly match ours (same hash) - otherwise the
-// candidate belongs to a different network/genesis and is rejected
-// regardless of length.
+// The genesis block must exactly match ours (same hash, which also encodes
+// ChainID) - otherwise the candidate belongs to a different network and is
+// rejected regardless of length.
+//
+// Finality: if candidate diverges from our chain at some block more than
+// FinalityDepth blocks behind our current head, it is rejected even if
+// longer and otherwise valid. Without this, a proof-of-stake chain (unlike
+// proof-of-work) can be costlessly rewritten arbitrarily far back by anyone
+// who holds - or once held - validator keys, since producing an alternate
+// history requires no real-world resource once a private key is known. A
+// depth limit converts "anything longer wins" into "anything longer wins,
+// as long as it doesn't rewrite blocks we already treat as settled" -
+// matching how real payment systems reason about settlement finality.
 func (c *Chain) ReplaceChain(candidate []types.Block) error {
 	if len(candidate) == 0 {
 		return fmt.Errorf("candidate chain is empty")
 	}
 
 	c.mu.RLock()
-	ourGenesis := c.blocks[0]
-	ourLen := len(c.blocks)
+	ourBlocks := make([]types.Block, len(c.blocks))
+	copy(ourBlocks, c.blocks)
+	startBalances := cloneU64Map(c.genesisBalances)
+	startStakes := cloneU64Map(c.stakes)
 	c.mu.RUnlock()
+
+	ourGenesis := ourBlocks[0]
+	ourLen := len(ourBlocks)
 
 	if candidate[0].Hash != ourGenesis.Hash || candidate[0].Index != 0 {
 		return fmt.Errorf("candidate chain has different genesis")
@@ -31,18 +46,32 @@ func (c *Chain) ReplaceChain(candidate []types.Block) error {
 		return fmt.Errorf("candidate chain (len %d) is not longer than current (len %d)", len(candidate), ourLen)
 	}
 
+	commonLen := 0
+	minLen := ourLen
+	if len(candidate) < minLen {
+		minLen = len(candidate)
+	}
+	for commonLen < minLen && ourBlocks[commonLen].Hash == candidate[commonLen].Hash {
+		commonLen++
+	}
+	reorgDepth := ourLen - commonLen
+	if uint64(reorgDepth) > c.finalityDepth {
+		return fmt.Errorf("candidate chain would rewrite %d already-finalized blocks (max reorg depth: %d) - rejected", reorgDepth, c.finalityDepth)
+	}
+
 	// Re-derive state from scratch by replaying every block through the
 	// same validation used for a live-appended block. This guarantees a
 	// synced chain is exactly as trustworthy as one built block-by-block.
-	c.mu.RLock()
-	startBalances := cloneU64Map(c.genesisBalances)
-	startStakes := cloneU64Map(c.stakes)
-	c.mu.RUnlock()
-
+	// sim must mirror every consensus/economic parameter c uses during
+	// validation (not just chainID) - otherwise a synced chain could be
+	// accepted under laxer rules than a live block would be.
 	sim := &Chain{
 		chainID:       c.chainID,
 		blockTime:     c.blockTime,
 		maxTxPerBlock: c.maxTxPerBlock,
+		maxBlockBytes: c.maxBlockBytes,
+		minFee:        c.minFee,
+		finalityDepth: c.finalityDepth,
 		blocks:        []types.Block{candidate[0]},
 		balances:      startBalances,
 		nonces:        make(map[string]uint64),

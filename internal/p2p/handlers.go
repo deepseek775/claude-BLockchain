@@ -67,22 +67,43 @@ func (n *Node) handleChain(blocks []types.Block) {
 	n.tryPropose() // we may now be the expected proposer for the new head
 }
 
-func (n *Node) handleTx(tx types.Transaction, from *Peer) {
+// handleTx validates and pools tx, gossiping it onward if it's new and
+// valid. It reports back whether the transaction was accepted so a direct
+// submitter (see the `tx` CLI / msgTxResult) gets real feedback instead of
+// a submission that silently vanishes on rejection.
+func (n *Node) handleTx(tx types.Transaction, from *Peer) (accepted bool, reason string) {
 	h := tx.Hash()
 	if n.alreadySeenTx(h) {
-		return
+		return false, "already seen"
 	}
 	n.markSeenTx(h)
 
-	if err := n.cfg.Chain.ValidateTransaction(tx); err != nil {
+	if err := n.cfg.Chain.ValidateTransactionStateless(tx); err != nil {
 		n.log.Printf("p2p: rejected tx from %s: %v", tx.From, err)
-		return
+		return false, err.Error()
 	}
-	if !n.cfg.Mempool.Add(tx) {
-		return
+	chainNonce := n.cfg.Chain.GetNonce(tx.From)
+	chainBalance := n.cfg.Chain.GetBalance(tx.From)
+	ok, reason := n.cfg.Mempool.Add(tx, chainNonce, chainBalance)
+	if !ok {
+		return false, reason
 	}
 	env, _ := newEnvelope(msgTx, tx)
 	n.broadcast(env, from)
+	return true, ""
+}
+
+func (n *Node) handleGetParams(p *Peer) {
+	params := NetworkParams{
+		ChainID:       n.cfg.Chain.ChainID(),
+		MinFee:        n.cfg.Chain.MinFee(),
+		MaxTxPerBlock: n.cfg.Chain.MaxTxPerBlock(),
+		MaxBlockBytes: n.cfg.Chain.MaxBlockBytes(),
+		FinalityDepth: n.cfg.Chain.FinalityDepth(),
+		BlockSeconds:  int(n.cfg.Chain.BlockInterval().Seconds()),
+	}
+	env, _ := newEnvelope(msgParams, params)
+	_ = p.send(env)
 }
 
 func (n *Node) handleBlock(b types.Block, from *Peer) {

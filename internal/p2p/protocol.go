@@ -29,6 +29,9 @@ const (
 	msgChain      msgType = "chain"
 	msgGetAccount msgType = "get_account"
 	msgAccount    msgType = "account"
+	msgTxResult   msgType = "tx_result"
+	msgGetParams  msgType = "get_params"
+	msgParams     msgType = "params"
 )
 
 // envelope is the wire format for every message: a type tag plus a
@@ -111,4 +114,25 @@ type AccountInfo struct {
 	Balance uint64 `json:"balance"`
 	Nonce   uint64 `json:"nonce"`
 	Stake   uint64 `json:"stake"`
+}
+
+// txResultMsg tells an ephemeral client (see the `tx` CLI) whether the
+// transaction it just submitted was accepted into the mempool, so
+// submission failures (bad nonce, insufficient balance, fee too low,
+// wrong chain) are reported back instead of silently vanishing.
+type txResultMsg struct {
+	Accepted bool   `json:"accepted"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// NetworkParams are the network's consensus/economic parameters, exposed
+// read-only so clients (and operators) don't have to hardcode or guess
+// values like the minimum acceptable fee.
+type NetworkParams struct {
+	ChainID       string `json:"chain_id"`
+	MinFee        uint64 `json:"min_fee"`
+	MaxTxPerBlock int    `json:"max_tx_per_block"`
+	MaxBlockBytes int    `json:"max_block_bytes"`
+	FinalityDepth uint64 `json:"finality_depth"`
+	BlockSeconds  int    `json:"block_seconds"`
 }
