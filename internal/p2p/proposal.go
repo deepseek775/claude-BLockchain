@@ -52,6 +52,7 @@ func (n *Node) tryPropose() {
 		n.log.Printf("p2p: failed to build block proposal: %v", err)
 		return
 	}
+	before := n.cfg.Chain.FinalizedHeight()
 	if err := n.cfg.Chain.AddBlock(block); err != nil {
 		n.log.Printf("p2p: failed to commit own block proposal: %v", err)
 		return
@@ -65,4 +66,7 @@ func (n *Node) tryPropose() {
 		return
 	}
 	n.broadcast(env, nil)
+
+	n.maybeVote(block)
+	n.logFinalization(before)
 }

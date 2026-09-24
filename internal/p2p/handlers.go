@@ -59,11 +59,14 @@ func (n *Node) handleChain(blocks []types.Block) {
 	if len(blocks) <= n.cfg.Chain.Len() {
 		return
 	}
+	before := n.cfg.Chain.FinalizedHeight()
 	if err := n.cfg.Chain.ReplaceChain(blocks); err != nil {
 		n.log.Printf("p2p: rejected chain sync: %v", err)
 		return
 	}
 	n.log.Printf("p2p: synced chain to height %d", n.cfg.Chain.Height())
+	n.maybeVote(n.cfg.Chain.LastBlock()) // attest to the new tip so it can start collecting finality votes
+	n.logFinalization(before)
 	n.tryPropose() // we may now be the expected proposer for the new head
 }
 
@@ -95,12 +98,13 @@ func (n *Node) handleTx(tx types.Transaction, from *Peer) (accepted bool, reason
 
 func (n *Node) handleGetParams(p *Peer) {
 	params := NetworkParams{
-		ChainID:       n.cfg.Chain.ChainID(),
-		MinFee:        n.cfg.Chain.MinFee(),
-		MaxTxPerBlock: n.cfg.Chain.MaxTxPerBlock(),
-		MaxBlockBytes: n.cfg.Chain.MaxBlockBytes(),
-		FinalityDepth: n.cfg.Chain.FinalityDepth(),
-		BlockSeconds:  int(n.cfg.Chain.BlockInterval().Seconds()),
+		ChainID:         n.cfg.Chain.ChainID(),
+		MinFee:          n.cfg.Chain.MinFee(),
+		MaxTxPerBlock:   n.cfg.Chain.MaxTxPerBlock(),
+		MaxBlockBytes:   n.cfg.Chain.MaxBlockBytes(),
+		FinalityDepth:   n.cfg.Chain.FinalityDepth(),
+		BlockSeconds:    int(n.cfg.Chain.BlockInterval().Seconds()),
+		FinalizedHeight: n.cfg.Chain.FinalizedHeight(),
 	}
 	env, _ := newEnvelope(msgParams, params)
 	_ = p.send(env)
@@ -124,6 +128,7 @@ func (n *Node) handleBlock(b types.Block, from *Peer) {
 		return
 	}
 
+	before := n.cfg.Chain.FinalizedHeight()
 	if err := n.cfg.Chain.AddBlock(b); err != nil {
 		n.log.Printf("p2p: rejected block %d from peer: %v", b.Index, err)
 		return
@@ -134,6 +139,8 @@ func (n *Node) handleBlock(b types.Block, from *Peer) {
 	env, _ := newEnvelope(msgBlock, b)
 	n.broadcast(env, from)
 
+	n.maybeVote(b)
+	n.logFinalization(before)
 	n.tryPropose() // we may be the expected proposer for the next height
 }
 
@@ -184,6 +191,11 @@ func (n *Node) gossipJanitor(ctx context.Context) {
 			for h, t := range n.seenBlocks {
 				if now.Sub(t) > gossipTTL {
 					delete(n.seenBlocks, h)
+				}
+			}
+			for h, t := range n.seenVotes {
+				if now.Sub(t) > gossipTTL {
+					delete(n.seenVotes, h)
 				}
 			}
 			n.seenMu.Unlock()

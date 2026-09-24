@@ -32,6 +32,7 @@ const (
 	msgTxResult   msgType = "tx_result"
 	msgGetParams  msgType = "get_params"
 	msgParams     msgType = "params"
+	msgVote       msgType = "vote"
 )
 
 // envelope is the wire format for every message: a type tag plus a
@@ -129,10 +130,11 @@ type txResultMsg struct {
 // read-only so clients (and operators) don't have to hardcode or guess
 // values like the minimum acceptable fee.
 type NetworkParams struct {
-	ChainID       string `json:"chain_id"`
-	MinFee        uint64 `json:"min_fee"`
-	MaxTxPerBlock int    `json:"max_tx_per_block"`
-	MaxBlockBytes int    `json:"max_block_bytes"`
-	FinalityDepth uint64 `json:"finality_depth"`
-	BlockSeconds  int    `json:"block_seconds"`
+	ChainID         string `json:"chain_id"`
+	MinFee          uint64 `json:"min_fee"`
+	MaxTxPerBlock   int    `json:"max_tx_per_block"`
+	MaxBlockBytes   int    `json:"max_block_bytes"`
+	FinalityDepth   uint64 `json:"finality_depth"`
+	BlockSeconds    int    `json:"block_seconds"`
+	FinalizedHeight uint64 `json:"finalized_height"`
 }

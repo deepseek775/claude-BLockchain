@@ -98,6 +98,9 @@ func (c *Chain) applyBlockLocked(block types.Block) error {
 	c.balances = newBalances
 	c.nonces = newNonces
 	c.blocks = append(c.blocks, block)
+	// Any votes that arrived for this height before the block itself did
+	// (a normal gossip race, not an error) can now be applied.
+	c.replayPendingVotesLocked(block.Index)
 	return nil
 }
 

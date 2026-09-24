@@ -69,6 +69,7 @@ type Node struct {
 	seenMu     sync.Mutex
 	seenTx     map[[32]byte]time.Time
 	seenBlocks map[string]time.Time
+	seenVotes  map[[32]byte]time.Time
 
 	// proposeMu prevents the ticker-driven and event-driven (post-sync,
 	// post-new-block) calls to tryPropose from racing each other into
@@ -105,6 +106,7 @@ func New(cfg Config) (*Node, error) {
 		pins:       make(map[string]ed25519.PublicKey),
 		seenTx:     make(map[[32]byte]time.Time),
 		seenBlocks: make(map[string]time.Time),
+		seenVotes:  make(map[[32]byte]time.Time),
 	}, nil
 }
 
@@ -364,6 +366,13 @@ func (n *Node) handleConn(ctx context.Context, conn *tls.Conn, knownAddr string)
 
 		case msgGetParams:
 			n.handleGetParams(peer)
+
+		case msgVote:
+			var v types.Vote
+			if err := json.Unmarshal(env.Data, &v); err != nil {
+				continue
+			}
+			n.handleVote(v, peer)
 
 		case msgChain:
 			var blocks []types.Block

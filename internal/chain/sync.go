@@ -54,6 +54,18 @@ func (c *Chain) ReplaceChain(candidate []types.Block) error {
 	for commonLen < minLen && ourBlocks[commonLen].Hash == candidate[commonLen].Hash {
 		commonLen++
 	}
+
+	c.mu.RLock()
+	finalizedHeight := c.finalizedHeight
+	c.mu.RUnlock()
+	// BFT finality is an absolute guarantee, not a heuristic: if the
+	// candidate diverges at or before a block that already collected
+	// >2/3-stake attestation, reject it outright regardless of length -
+	// no amount of "longer chain" evidence can undo a finalized block.
+	if uint64(commonLen-1) < finalizedHeight {
+		return fmt.Errorf("candidate chain diverges at block %d, at or before our finalized height %d - rejected", commonLen, finalizedHeight)
+	}
+
 	reorgDepth := ourLen - commonLen
 	if uint64(reorgDepth) > c.finalityDepth {
 		return fmt.Errorf("candidate chain would rewrite %d already-finalized blocks (max reorg depth: %d) - rejected", reorgDepth, c.finalityDepth)
@@ -77,6 +89,8 @@ func (c *Chain) ReplaceChain(candidate []types.Block) error {
 		nonces:        make(map[string]uint64),
 		stakes:        startStakes,
 		validatorPubs: c.validatorPubs,
+		votesByHeight: make(map[uint64]map[string]types.Vote),
+		pendingVotes:  make(map[uint64][]types.Vote),
 	}
 	for _, block := range candidate[1:] {
 		if err := sim.applyBlockLocked(block); err != nil {
@@ -93,6 +107,24 @@ func (c *Chain) ReplaceChain(candidate []types.Block) error {
 	c.blocks = sim.blocks
 	c.balances = sim.balances
 	c.nonces = sim.nonces
+	// Heights at or beyond commonLen just got new block content, so any
+	// votes recorded against the old blocks there are for a hash that no
+	// longer exists on our chain. Left in place, they'd make a validator's
+	// legitimate vote for the new block look like equivocation against its
+	// own stale vote for the discarded one. Heights before commonLen are
+	// untouched by the swap, so their votes (and finalizedHeight/Hash,
+	// which the check above guarantees falls at or before commonLen-1)
+	// stay valid as-is.
+	for h := range c.votesByHeight {
+		if h >= uint64(commonLen) {
+			delete(c.votesByHeight, h)
+		}
+	}
+	for h := range c.pendingVotes {
+		if h >= uint64(commonLen) {
+			delete(c.pendingVotes, h)
+		}
+	}
 
 	if c.logFile != nil {
 		if err := c.rewriteLog(); err != nil {

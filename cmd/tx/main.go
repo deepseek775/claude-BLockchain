@@ -127,8 +127,8 @@ func cmdParams(args []string) {
 	if err != nil {
 		fatal(err)
 	}
-	fmt.Printf("chain_id:        %s\nmin_fee:         %d\nmax_tx_per_block: %d\nmax_block_bytes: %d\nfinality_depth:  %d\nblock_seconds:   %d\n",
-		p.ChainID, p.MinFee, p.MaxTxPerBlock, p.MaxBlockBytes, p.FinalityDepth, p.BlockSeconds)
+	fmt.Printf("chain_id:         %s\nmin_fee:          %d\nmax_tx_per_block: %d\nmax_block_bytes:  %d\nfinality_depth:   %d\nblock_seconds:    %d\nfinalized_height: %d\n",
+		p.ChainID, p.MinFee, p.MaxTxPerBlock, p.MaxBlockBytes, p.FinalityDepth, p.BlockSeconds, p.FinalizedHeight)
 }
 
 func usage() {

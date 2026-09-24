@@ -40,6 +40,7 @@ type Chain struct {
 	nonces        map[string]uint64
 	stakes        map[string]uint64
 	validatorPubs map[string]ed25519.PublicKey
+	totalStake    uint64 // sum of stakes at genesis; stake is fixed for the chain's lifetime (see genesisBalances note)
 
 	// genesisBalances is retained separately from balances (which mutates
 	// as blocks apply) so that a full chain re-sync (see ReplaceChain) can
@@ -47,6 +48,16 @@ type Chain struct {
 	// not implement dynamic staking transactions, so stakes never change
 	// after genesis and don't need the same treatment.
 	genesisBalances map[string]uint64
+
+	// BFT-style finality: validators sign a Vote for each block they
+	// accept (see internal/p2p's maybeVote), and once votes covering more
+	// than 2/3 of total stake are collected for a block, it is finalized -
+	// a much stronger, near-instant guarantee than the depth heuristic
+	// alone. See finality.go.
+	votesByHeight   map[uint64]map[string]types.Vote // height -> voter address -> their vote
+	pendingVotes    map[uint64][]types.Vote          // votes for a height we haven't reached yet, bounded (see maxPendingVotes)
+	finalizedHeight uint64
+	finalizedHash   string
 
 	logFile *os.File // append-only persisted copy of blocks, one JSON line each
 }
@@ -66,11 +77,18 @@ func New(g *genesis.Genesis, logPath string) (*Chain, error) {
 		nonces:        make(map[string]uint64),
 		stakes:        make(map[string]uint64),
 		validatorPubs: make(map[string]ed25519.PublicKey),
+		votesByHeight: make(map[uint64]map[string]types.Vote),
+		pendingVotes:  make(map[uint64][]types.Vote),
 	}
 	for _, a := range g.Accounts {
 		c.balances[a.Address] = a.Balance
 		c.stakes[a.Address] = a.Stake
 		c.validatorPubs[a.Address] = a.PublicKeyBytes()
+		var overflow bool
+		c.totalStake, overflow = types.AddUint64(c.totalStake, a.Stake)
+		if overflow {
+			return nil, fmt.Errorf("chain: total stake overflows (genesis should have rejected this)")
+		}
 	}
 	c.genesisBalances = cloneU64Map(c.balances)
 
@@ -82,6 +100,9 @@ func New(g *genesis.Genesis, logPath string) (*Chain, error) {
 	}
 	genesisBlock.Hash = genesisBlock.ComputeHash()
 	c.blocks = append(c.blocks, genesisBlock)
+	// Genesis is trivially final: every honest node starts from the same
+	// hard-coded genesis block, so there's nothing to vote on.
+	c.finalizedHash = genesisBlock.Hash
 
 	if logPath != "" {
 		if err := c.openLog(logPath); err != nil {
@@ -97,6 +118,22 @@ func (c *Chain) MaxTxPerBlock() int           { return c.maxTxPerBlock }
 func (c *Chain) MaxBlockBytes() int           { return c.maxBlockBytes }
 func (c *Chain) MinFee() uint64               { return c.minFee }
 func (c *Chain) FinalityDepth() uint64        { return c.finalityDepth }
+func (c *Chain) TotalStake() uint64           { return c.totalStake }
+
+// FinalizedHeight returns the height of the most recent block confirmed by
+// votes covering more than 2/3 of total stake. It only ever increases.
+func (c *Chain) FinalizedHeight() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.finalizedHeight
+}
+
+// FinalizedHash returns the hash of the block at FinalizedHeight.
+func (c *Chain) FinalizedHash() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.finalizedHash
+}
 
 // Height returns the index of the latest block.
 func (c *Chain) Height() uint64 {
