@@ -1,0 +1,7 @@
+.git
+*.md
+data/
+deploy/
+.env
+*.wallet.json
+wallet.json

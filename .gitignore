@@ -1,0 +1,14 @@
+# Generated local devnet (wallets, genesis, passphrases) - see cmd/devnet.
+# Private key material must never be committed, "for local testing" or not.
+/deploy/
+.env
+
+# Node runtime data (block log, etc.)
+/data/
+
+# Any stray wallet files created ad hoc during local testing.
+*.wallet.json
+wallet.json
+
+# Build artifacts
+/bin/
